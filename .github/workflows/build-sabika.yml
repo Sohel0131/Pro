@@ -38,8 +38,6 @@ jobs:
           mkdir -p www assets
           cp index.html www/index.html
           convert icon.png -resize 1024x1024^ -gravity center -extent 1024x1024 assets/icon-only.png
-          convert -size 2732x2732 xc:'#080A1C' \
-            \( assets/icon-only.png -resize 1024x1024 \) -gravity center -composite assets/splash.png
 
           npm init -y
           npm install @capacitor/core@7 @capacitor/android@7
@@ -49,6 +47,30 @@ jobs:
           npx cap add android
           npx capacitor-assets generate --android
           npx cap sync android
+
+      - name: Remove launch splash logo (plain dark screen only)
+        run: |
+          res=android/app/src/main/res
+          # old Android: delete every splash image, use a solid colour instead
+          find $res -path "*drawable*" -name "splash*.png" -delete
+          mkdir -p $res/drawable $res/values-v31
+          cat > $res/drawable/splash.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#080A1C"/>
+          </shape>
+          XML
+          # Android 12+: transparent splash icon on the same colour
+          convert -size 432x432 xc:none $res/drawable/splash_icon.png
+          cat > $res/values-v31/styles.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:windowSplashScreenBackground">#080A1C</item>
+                  <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+              </style>
+          </resources>
+          XML
 
       - name: Build APK
         run: |
