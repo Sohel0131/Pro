@@ -1,0 +1,93 @@
+name: Build Sabika Pro APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Prepare Capacitor project
+        run: |
+          test -f index.html || (echo "ERROR: index.html not found in repository root" && exit 1)
+          test -f icon.png || (echo "ERROR: icon.png not found in repository root" && exit 1)
+
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
+
+          mkdir -p www
+          cp index.html www/index.html
+
+          npm init -y
+          npm install @capacitor/core@7 @capacitor/android@7
+          npm install -D @capacitor/cli@7
+
+          npx cap init "Sabika Pro" "com.sohelpro.sabikapro" --web-dir www
+          npx cap add android
+          npx cap sync android
+
+      - name: Set app icon from icon.png and remove launch splash logo
+        run: |
+          res=android/app/src/main/res
+
+          # --- app icon: icon.png on every density, remove Capacitor default adaptive icon ---
+          for d in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            name=${d%%:*}; px=${d##*:}
+            mkdir -p $res/mipmap-$name
+            for f in ic_launcher.png ic_launcher_round.png ic_launcher_foreground.png; do
+              convert icon.png -trim +repage -resize ${px}x${px} -background none -gravity center -extent ${px}x${px} $res/mipmap-$name/$f
+            done
+          done
+          rm -f $res/mipmap-anydpi*/*.xml
+
+          # --- splash: no logo, plain dark screen ---
+          find $res -path "*drawable*" -name "splash*.png" -delete
+          mkdir -p $res/drawable $res/values-v31
+          cat > $res/drawable/splash.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+              <solid android:color="#080A1C"/>
+          </shape>
+          XML
+          convert -size 432x432 xc:none $res/drawable/splash_icon.png
+          cat > $res/values-v31/styles.xml <<'XML'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme.NoActionBarLaunch" parent="AppTheme.NoActionBar">
+                  <item name="android:windowSplashScreenBackground">#080A1C</item>
+                  <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+              </style>
+          </resources>
+          XML
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Sabika-Pro-APK
+          path: android/app/build/outputs/apk/debug/app-debug.apk
